@@ -1,6 +1,7 @@
 # Markdown Converter - Full Test Suite
 
 This document tests **all supported markdown features** in a single file.
+Download the raw code and paste into the converter.
 
 ---
 
@@ -514,4 +515,5 @@ This paragraph tests **formatting** with *various* `styles` including ~~striketh
 **End of Test Document**
 
 *Copy this entire document into the Markdown Converter to verify all features work correctly. Check that Mermaid diagrams render as images and that you can retrieve their source code via the "View Source" tab.*
+
 
