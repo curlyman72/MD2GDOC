@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      color: #202124;
+      background: #f8f9fa;
+    }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: white;
+      border-bottom: 1px solid #dadce0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .tab {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #5f6368;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab:hover { background: #f1f3f4; }
+    .tab.active {
+      color: #1a73e8;
+      border-bottom-color: #1a73e8;
+      background: white;
+    }
+    
+    /* Content Areas */
+    .content {
+      display: none;
+      padding: 16px;
+    }
+    .content.active { display: block; }
+    
+    /* Convert Tab */
+    textarea {
+      width: 100%;
+      height: 280px;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 12px;
+      resize: vertical;
+      margin-bottom: 12px;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    
+    /* Settings Tab */
+    .setting-group {
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #dadce0;
+    }
+    .setting-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #5f6368;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    select, input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    select:focus, input:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    .help-text {
+      font-size: 11px;
+      color: #5f6368;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+    
+    /* Source Viewer Tab */
+    .source-display {
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+      color: #24292e;
+    }
+    .source-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+    }
+    
+    /* Buttons */
+    .button-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    button {
+      flex: 1;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13px;
+    }
+    button:hover { background: #1557b0; }
+    button.secondary {
+      background: white;
+      color: #1a73e8;
+      border: 1px solid #dadce0;
+    }
+    button.secondary:hover { background: #f8f9fa; }
+    button:disabled {
+      background: #dadce0;
+      color: #5f6368;
+      cursor: not-allowed;
+    }
+    
+    /* Status */
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success {
+      background: #e6f4ea;
+      color: #1e8e3e;
+      display: block;
+    }
+    .status.error {
+      background: #fce8e6;
+      color: #d93025;
+      display: block;
+    }
+    .status.info {
+      background: #e8f0fe;
+      color: #1967d2;
+      display: block;
+    }
+    
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      color: #5f6368;
+      padding: 40px 20px;
+      font-size: 13px;
+    }
+    .empty-state-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('convert')">Convert</button>
+    <button class="tab" onclick="switchTab('settings')">Settings</button>
+    <button class="tab" onclick="switchTab('source')">View Source</button>
+  </div>
+
+  <!-- Convert Tab -->
+  <div id="convert" class="content active">
+    <textarea id="markdown-input" placeholder="Paste your GenAI markdown here...
+
+Supports:
+- Headers (# ## ###)
+- **Bold** and *italic*
+- `inline code` and ```code blocks```
+- Tables (| header | data |)
+- Mermaid diagrams (```mermaid)
+- Lists (- item, 1. item)
+- > Blockquotes
+- ~~Strikethrough~~"></textarea>
+    
+    <div class="button-group">
+      <button onclick="convert()">Convert to Doc</button>
+      <button class="secondary" onclick="clearInput()">Clear</button>
+    </div>
+    
+    <div id="status-convert" class="status"></div>
+  </div>
+
+  <!-- Settings Tab -->
+  <div id="settings" class="content">
+    <div class="setting-group">
+      <label class="setting-label">Mermaid Provider</label>
+      <select id="mermaid-provider" onchange="toggleApiKey()">
+        <option value="mermaid.ink">Mermaid.ink (Free, Default)</option>
+        <option value="mermaidchart">MermaidChart (Pro)</option>
+        <option value="kroki">Kroki.io (Free)</option>
+        <option value="custom">Custom Endpoint</option>
+      </select>
+      <div class="help-text">Select the service to render Mermaid diagrams</div>
+    </div>
+
+    <div class="setting-group" id="api-key-group" style="display: none;">
+      <label class="setting-label">API Key / URL</label>
+      <input type="password" id="api-key" placeholder="Enter API key or custom URL">
+      <div class="help-text">Required for MermaidChart or custom endpoints. Stored securely in your user properties.</div>
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Mermaid Theme</label>
+      <select id="mermaid-theme">
+        <option value="neutral">Neutral (Professional)</option>
+        <option value="dark">Dark</option>
+        <option value="forest">Forest (Green)</option>
+        <option value="base">Base (Minimal)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Code Retention</label>
+      <select id="code-retention">
+        <option value="alt">Alt Text (Hidden, Accessible)</option>
+        <option value="caption">Caption Below Image</option>
+        <option value="comment">Google Doc Comment (Requires Drive API)</option>
+        <option value="none">None (Image Only)</option>
+      </select>
+      <div class="help-text">How to store the source code with rendered diagrams</div>
+    </div>
+
+    <div class="button-group">
+      <button onclick="saveSettings()">Save Settings</button>
+    </div>
+    
+    <div id="status-settings" class="status"></div>
+  </div>
+
+  <!-- Source Viewer Tab -->
+  <div id="source" class="content">
+    <div class="setting-group">
+      <label class="setting-label">Retrieve Source Code</label>
+      <div class="help-text">Click any diagram or code block in your document, then click below to view its source.</div>
+    </div>
+
+    <button onclick="loadSelectedSource()" style="width: 100%; margin-bottom: 16px;">
+      Get Source from Selection
+    </button>
+
+    <div id="source-container">
+      <div class="empty-state">
+        <div class="empty-state-icon">🖱️</div>
+        <div>Select a diagram or code block in your document, then click the button above to view its source code here.</div>
+      </div>
+    </div>
+    
+    <div id="status-source" class="status"></div>
+  </div>
+
+  <script>
+    // Load settings on startup
+    google.script.run.withSuccessHandler(function(settings) {
+      document.getElementById('mermaid-provider').value = settings.mermaidProvider;
+      document.getElementById('api-key').value = settings.apiKey || '';
+      document.getElementById('mermaid-theme').value = settings.theme;
+      document.getElementById('code-retention').value = settings.codeRetention;
+      toggleApiKey();
+    }).getSettings();
+
+    function switchTab(tabName) {
+      // Update buttons
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      
+      // Update content
+      document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+      document.getElementById(tabName).classList.add('active');
+    }
+
+    function toggleApiKey() {
+      const provider = document.getElementById('mermaid-provider').value;
+      const apiKeyGroup = document.getElementById('api-key-group');
+      if (provider === 'mermaidchart' || provider === 'custom') {
+        apiKeyGroup.style.display = 'block';
+      } else {
+        apiKeyGroup.style.display = 'none';
+      }
+    }
+
+    function convert() {
+      const markdown = document.getElementById('markdown-input').value;
+      if (!markdown.trim()) {
+        showStatus('convert', 'Please enter some markdown first', 'error');
+        return;
+      }
+      
+      const button = document.querySelector('#convert button');
+      button.disabled = true;
+      button.textContent = 'Converting...';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showStatus('convert', result.message, result.success ? 'success' : 'error');
+          button.disabled = false;
+          button.textContent = 'Convert to Doc';
+        })
+        .withFailureHandler(function(error) {
+          showStatus('convert', 'Error: ' + error.message, 'error');
+          button.disabled = false;
+          button.textContent = 'Convert to Doc';
+        })
+        .convertMarkdown(markdown);
+    }
+
+    function saveSettings() {
+      const settings = {
+        provider: document.getElementById('mermaid-provider').value,
+        apiKey: document.getElementById('api-key').value,
+        theme: document.getElementById('mermaid-theme').value,
+        retention: document.getElementById('code-retention').value
+      };
+      
+      const button = event.target;
+      button.textContent = 'Saving...';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showStatus('settings', 'Settings saved successfully!', 'success');
+          button.textContent = 'Save Settings';
+        })
+        .withFailureHandler(function(error) {
+          showStatus('settings', 'Error: ' + error.message, 'error');
+          button.textContent = 'Save Settings';
+        })
+        .saveSettings(settings);
+    }
+
+    function loadSelectedSource() {
+      const container = document.getElementById('source-container');
+      container.innerHTML = '<div class="empty-state">Loading...</div>';
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.error) {
+            container.innerHTML = `
+              <div class="empty-state">
+                <div class="empty-state-icon">⚠️</div>
+                <div>${result.error}</div>
+              </div>
+            `;
+            return;
+          }
+          
+          const code = result.altText || result.content || 'No source available';
+          const type = result.type === 'image' ? '🖼️ Diagram Source' : '💻 Code Block';
+          
+          container.innerHTML = `
+            <div style="margin-bottom: 8px; font-weight: 500; color: #5f6368; font-size: 12px;">
+              ${type}
+            </div>
+            <div class="source-display">${escapeHtml(code)}</div>
+            <div class="source-actions">
+              <button onclick="copyToClipboard('${escapeJs(code)}')">Copy to Clipboard</button>
+              <button class="secondary" onclick="clearSource()">Clear</button>
+            </div>
+          `;
+        })
+        .withFailureHandler(function(error) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">❌</div>
+              <div>Error: ${error.message}</div>
+            </div>
+          `;
+        })
+        .getSelectedImageSource();
+    }
+
+    function clearSource() {
+      document.getElementById('source-container').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🖱️</div>
+          <div>Select a diagram or code block in your document, then click the button above to view its source code here.</div>
+        </div>
+      `;
+    }
+
+    function clearInput() {
+      document.getElementById('markdown-input').value = '';
+      document.getElementById('status-convert').style.display = 'none';
+    }
+
+    function showStatus(tab, message, type) {
+      const status = document.getElementById('status-' + tab);
+      status.textContent = message;
+      status.className = 'status ' + type;
+      setTimeout(() => {
+        status.style.display = 'none';
+      }, 4000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function escapeJs(text) {
+      return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showStatus('source', 'Copied to clipboard!', 'success');
+      });
+    }
+  </script>
+</body>
+</html>
