@@ -289,10 +289,32 @@ function insertMermaidDiagram(body, code, index, docId, settings) {
       
       if (imageBlob) {
         console.log(`${provider.name} succeeded`);
-        const image = body.insertImage(index, imageBlob);
-        image.setWidth(600);
-        image.setHeight(image.getHeight() * (600 / image.getWidth()));
         
+        // Insert image - ONLY ONCE
+        const image = body.insertImage(index, imageBlob);
+        
+        // Google Docs sometimes auto-resizes to page width
+        // We need to force it back to natural size or scaled proportionally
+        
+        // Lock aspect ratio first (in case it was unlocked and stretched)
+        // Note: Apps Script doesn't expose lockAspectRatio, so we calculate both dimensions
+        
+        const docWidth = 580; // approximate usable width in points
+        const imgWidth = image.getWidth();
+        const imgHeight = image.getHeight();
+        
+        // If image is wider than page, scale it down proportionally
+        if (imgWidth > docWidth) {
+          const ratio = docWidth / imgWidth;
+          image.setWidth(docWidth);
+          image.setHeight(imgHeight * ratio);
+        } else {
+          // Keep natural size, but ensure both are set to prevent stretching
+          image.setWidth(imgWidth);
+          image.setHeight(imgHeight);
+        }
+        
+        // Center it
         const para = image.getParent().asParagraph();
         para.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
         
@@ -305,6 +327,7 @@ function insertMermaidDiagram(body, code, index, docId, settings) {
     }
   }
   
+  // All failed
   const errorMsg = errorLog.join('; ');
   const fallbackCode = `%% Rendering Error: ${errorMsg}\n%% Check syntax at https://mermaid.live\n\n${code}`;
   return insertCodeBlock(body, fallbackCode, 'mermaid', index);
