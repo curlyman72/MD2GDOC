@@ -70,8 +70,40 @@ function getSelectedImageSource() {
   }
 }
 
+function decodeHtmlEntities(text) {
+  if (!text) return text;
+  
+  let decoded = text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#x2F;/g, '/')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#[0-9]+;/g, function(match) {
+      return String.fromCharCode(parseInt(match.replace(/&#|;/g, '')));
+    });
+  
+  if (decoded.includes('&amp;') || decoded.includes('&lt;') || decoded.includes('&gt;')) {
+    decoded = decoded
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  }
+  
+  return decoded;
+}
+
 function convertMarkdown(markdown) {
   try {
+    if (!markdown || typeof markdown !== 'string') {
+      return { success: false, message: 'No markdown content provided' };
+    }
+    
+    markdown = decodeHtmlEntities(markdown);
+    
     const doc = DocumentApp.getActiveDocument();
     const body = doc.getBody();
     const cursor = doc.getCursor();
@@ -86,43 +118,13 @@ function convertMarkdown(markdown) {
     processContent(body, markdown, insertIndex, docId);
     return { success: true, message: 'Document formatted successfully!' };
   } catch (error) {
+    console.error('Conversion error:', error);
     return { success: false, message: 'Error: ' + error.toString() };
   }
 }
 
-function decodeHtmlEntities(text) {
-  if (!text) return text;
-  
-  // Handle double-encoding (e.g., &amp;gt; -> &gt; -> >)
-  let decoded = text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#x2F;/g, '/')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#[0-9]+;/g, function(match) {
-      return String.fromCharCode(parseInt(match.replace(/&#|;/g, '')));
-    });
-  
-  // Handle potential double-encoding recursively (once more)
-  if (decoded.includes('&amp;') || decoded.includes('&lt;') || decoded.includes('&gt;')) {
-    decoded = decoded
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-  }
-  
-  return decoded;
-}
-
 function processContent(body, markdown, startIndex, docId) {
-  // Decode HTML entities first (critical for copied HTML content)
-  markdown = decodeHtmlEntities(markdown);
-  
-  const lines = markdown.split('\n');
+  const lines = markdown.split(/\r?\n/);
   let i = 0;
   let currentIndex = startIndex;
   const settings = getSettings();
@@ -132,7 +134,8 @@ function processContent(body, markdown, startIndex, docId) {
     
     // Code blocks & Mermaid
     if (line.match(/^```/)) {
-      const lang = line.match(/^```(\w*)/)?.[1] || '';
+      const langMatch = line.match(/^```(\w*)/);
+      const lang = langMatch ? langMatch[1] : '';
       const codeContent = [];
       i++;
       while (i < lines.length && !lines[i].match(/^```/)) {
@@ -150,14 +153,13 @@ function processContent(body, markdown, startIndex, docId) {
       continue;
     }
     
-    // Tables - Fixed to handle inline formatting
+    // Tables
     if (line.match(/^\s*\|.*\|\s*$/)) {
       const tableLines = [];
       let alignments = [];
       
       while (i < lines.length && lines[i].match(/^\s*\|.*\|\s*$/)) {
         const currentLine = lines[i].trim();
-        // Check if it's an alignment row |:---|---:|
         if (currentLine.replace(/\|/g, '').trim().match(/^[\s:\-]+$/)) {
           alignments = parseAlignments(currentLine);
         } else {
@@ -189,10 +191,10 @@ function processContent(body, markdown, startIndex, docId) {
       continue;
     }
     
-    // Blockquotes - IMPROVED: handles leading whitespace and >
+    // Blockquotes
     const bqMatch = line.match(/^(\s*)>\s?(.*)$/);
     if (bqMatch) {
-      const quoteLines = [bqMatch[2]];  // Get content after >
+      const quoteLines = [bqMatch[2]];
       i++;
       while (i < lines.length) {
         const nextLine = lines[i];
@@ -201,7 +203,6 @@ function processContent(body, markdown, startIndex, docId) {
           quoteLines.push(nextMatch[2]);
           i++;
         } else if (nextLine.trim() === '') {
-          // Empty line ends blockquote
           break;
         } else {
           break;
@@ -219,7 +220,7 @@ function processContent(body, markdown, startIndex, docId) {
       const items = [];
       
       while (i < lines.length) {
-        const match = lines[i]?.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+        const match = lines[i].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
         if (!match) break;
         
         const indent = match[1].length;
@@ -227,21 +228,17 @@ function processContent(body, markdown, startIndex, docId) {
         items.push({ level, text: match[3] });
         i++;
         
-        // Continue this list item on next lines (if indented or continuation)
-        // BUT stop if we hit a table, code block, blockquote, or header
         while (i < lines.length) {
           const nextLine = lines[i];
           
-          // Check for patterns that should BREAK out of list processing
-          if (nextLine.match(/^```/)) break; // Code block
-          if (nextLine.match(/^\s*\|.*\|/)) break; // Table
-          if (nextLine.match(/^>\s?/)) break; // Blockquote
-          if (nextLine.match(/^#{1,6}\s/)) break; // Header
-          if (nextLine.match(/^(-{3,}|\*{3,}|_{3,})$/)) break; // HR
-          if (nextLine.trim() === '') break; // Empty line
-          if (nextLine.match(/^(\s*)([-*+]|\d+\.)\s+/)) break; // New list item
+          if (nextLine.match(/^```/)) break;
+          if (nextLine.match(/^\s*\|.*\|/)) break;
+          if (nextLine.match(/^>\s?/)) break;
+          if (nextLine.match(/^#{1,6}\s/)) break;
+          if (nextLine.match(/^(-{3,}|\*{3,}|_{3,})$/)) break;
+          if (nextLine.trim() === '') break;
+          if (nextLine.match(/^(\s*)([-*+]|\d+\.)\s+/)) break;
           
-          // Otherwise, continue this list item
           items[items.length - 1].text += ' ' + nextLine.trim();
           i++;
         }
@@ -251,7 +248,7 @@ function processContent(body, markdown, startIndex, docId) {
       continue;
     }
     
-    // Regular paragraph with inline formatting
+    // Regular paragraph
     if (line.trim() !== '') {
       const para = body.insertParagraph(currentIndex, '');
       formatInlineText(para, line);
@@ -266,32 +263,36 @@ function processContent(body, markdown, startIndex, docId) {
 function insertMermaidDiagram(body, code, index, docId, settings) {
   settings = settings || getSettings();
   
-  // Always try Kroki first (most reliable), then fallback to selected provider
+  let errorLog = [];
+  
   const providers = [
-    { name: 'kroki', fn: () => fetchKrokiDiagram(code, 'mermaid', settings.theme || 'neutral') },
-    { name: settings.mermaidProvider, fn: () => fetchMermaidProvider(code, settings) }
+    { name: 'kroki', fn: () => fetchKrokiDiagram(code, 'mermaid', settings.theme) },
+    { name: 'mermaid.ink', fn: () => fetchMermaidInk(code, settings.theme) }
   ];
   
-  let lastError = '';
+  if (settings.mermaidProvider === 'mermaidchart' && settings.apiKey) {
+    providers.unshift({ 
+      name: 'mermaidchart', 
+      fn: () => fetchMermaidChart(code, settings.apiKey, settings.theme) 
+    });
+  } else if (settings.mermaidProvider === 'custom' && settings.apiKey) {
+    providers.unshift({ 
+      name: 'custom', 
+      fn: () => fetchCustomDiagram(code, settings.apiKey, settings.theme) 
+    });
+  }
   
   for (const provider of providers) {
     try {
-      console.log(`Trying mermaid provider: ${provider.name}`);
+      console.log(`Trying ${provider.name}...`);
       const imageBlob = provider.fn();
       
       if (imageBlob) {
+        console.log(`${provider.name} succeeded`);
         const image = body.insertImage(index, imageBlob);
+        image.setWidth(600);
+        image.setHeight(image.getHeight() * (600 / image.getWidth()));
         
-        // Calculate height maintaining aspect ratio
-        const originalHeight = image.getHeight();
-        const originalWidth = image.getWidth();
-        const newWidth = 600;
-        const newHeight = (originalHeight * newWidth) / originalWidth;
-        
-        image.setWidth(newWidth);
-        image.setHeight(newHeight);
-        
-        // Center the image
         const para = image.getParent().asParagraph();
         para.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
         
@@ -299,55 +300,136 @@ function insertMermaidDiagram(body, code, index, docId, settings) {
         return index + 1;
       }
     } catch (e) {
-      console.error(`Provider ${provider.name} failed:`, e);
-      lastError = e.message;
+      console.error(`${provider.name} failed:`, e);
+      errorLog.push(`${provider.name}: ${e.message}`);
     }
   }
   
-  // All failed - insert as code block with error comment
-  console.error('All mermaid providers failed:', lastError);
-  const errorCode = `%% Error: ${lastError}\n%% Fallback: Please check diagram syntax at mermaid.live\n\n${code}`;
-  return insertCodeBlock(body, errorCode, 'mermaid', index);
+  const errorMsg = errorLog.join('; ');
+  const fallbackCode = `%% Rendering Error: ${errorMsg}\n%% Check syntax at https://mermaid.live\n\n${code}`;
+  return insertCodeBlock(body, fallbackCode, 'mermaid', index);
 }
 
-function fetchMermaidProvider(diagramCode, settings) {
-  switch(settings.mermaidProvider) {
-    case 'mermaidchart':
-      if (!settings.apiKey) throw new Error('MermaidChart API key not configured');
-      return fetchMermaidChart(diagramCode, settings.apiKey, settings.theme);
-      
-    case 'custom':
-      if (!settings.apiKey) throw new Error('Custom API URL not configured');
-      return fetchCustomDiagram(diagramCode, settings.apiKey, settings.theme);
-      
-    case 'mermaid.ink':
-    default:
-      const encoded = Utilities.base64Encode(diagramCode, Utilities.Charset.UTF_8);
-      const url = `https://mermaid.ink/img/${encoded}?theme=${settings.theme}&width=800`;
-      
-      console.log('Mermaid.ink URL length:', url.length);
-      
-      if (url.length > 8000) {
-        throw new Error('Diagram too complex for mermaid.ink');
-      }
-      
-      const response = UrlFetchApp.fetch(url, { 
-        muteHttpExceptions: true,
-        method: 'GET'
-      });
-      
-      const responseCode = response.getResponseCode(); // FIXED: renamed from 'code'
-      console.log('Mermaid.ink response:', responseCode);
-      
-      if (responseCode === 200) {
-        return response.getBlob();
-      } else if (responseCode === 400) {
-        throw new Error('Invalid mermaid syntax (400)');
-      } else if (responseCode === 414) {
-        throw new Error('Diagram too large (414)');
-      } else {
-        throw new Error(`HTTP ${responseCode}`);
-      }
+function applyMermaidTheme(code, theme) {
+  if (!theme || theme === 'neutral' || theme === 'default') {
+    return code;
+  }
+  
+  if (code.match(/^%%{init:/)) {
+    return code.replace(/(theme\s*:\s*['"])\w*(['"])/, `$1${theme}$2`);
+  }
+  
+  return `%%{init: {'theme': '${theme}'}}%%\n${code}`;
+}
+
+function fetchMermaidInk(diagramCode, theme) {
+  const themedCode = applyMermaidTheme(diagramCode, theme);
+  const encoded = Utilities.base64Encode(themedCode, Utilities.Charset.UTF_8);
+  const url = `https://mermaid.ink/img/${encoded}?width=800`;
+  
+  console.log('Mermaid.ink URL length:', url.length, 'Theme:', theme);
+  
+  if (url.length > 8000) {
+    throw new Error('Diagram too large for mermaid.ink');
+  }
+  
+  const response = UrlFetchApp.fetch(url, { 
+    method: 'GET',
+    muteHttpExceptions: true 
+  });
+  
+  const responseCode = response.getResponseCode();
+  console.log('Mermaid.ink response:', responseCode);
+  
+  if (responseCode === 200) {
+    return response.getBlob();
+  } else if (responseCode === 414) {
+    throw new Error('URI Too Long');
+  } else {
+    const errorText = response.getContentText().substring(0, 200);
+    throw new Error(`HTTP ${responseCode}: ${errorText}`);
+  }
+}
+
+function fetchKrokiDiagram(diagramCode, diagramType, theme) {
+  const themedCode = applyMermaidTheme(diagramCode, theme);
+  const url = `https://kroki.io/${diagramType}/png`;
+  
+  console.log('Kroki endpoint:', url, 'Theme:', theme);
+  
+  const response = UrlFetchApp.fetch(url, {
+    method: 'POST',
+    contentType: 'text/plain',
+    payload: themedCode,
+    muteHttpExceptions: true
+  });
+  
+  const responseCode = response.getResponseCode();
+  console.log('Kroki response:', responseCode);
+  
+  if (responseCode === 200) {
+    return response.getBlob();
+  } else if (responseCode === 400) {
+    const errorText = response.getContentText().substring(0, 200);
+    throw new Error(`Invalid syntax: ${errorText}`);
+  } else {
+    throw new Error(`HTTP ${responseCode}`);
+  }
+}
+
+function fetchMermaidChart(diagramCode, apiKey, theme) {
+  const url = 'https://api.mermaidchart.com/rest-api/diagrams/render';
+  
+  const payload = {
+    code: diagramCode,
+    format: 'png'
+  };
+  
+  if (theme && theme !== 'neutral' && theme !== 'default') {
+    payload.theme = theme;
+  }
+  
+  const response = UrlFetchApp.fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  
+  const responseCode = response.getResponseCode();
+  
+  if (responseCode === 200) {
+    return response.getBlob();
+  } else if (responseCode === 401) {
+    throw new Error('Invalid API key');
+  } else {
+    const errorText = response.getContentText().substring(0, 200);
+    throw new Error(`HTTP ${responseCode}: ${errorText}`);
+  }
+}
+
+function fetchCustomDiagram(diagramCode, apiUrl, theme) {
+  const response = UrlFetchApp.fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify({
+      code: diagramCode,
+      theme: theme
+    }),
+    muteHttpExceptions: true
+  });
+  
+  const responseCode = response.getResponseCode();
+  
+  if (responseCode === 200) {
+    return response.getBlob();
+  } else {
+    throw new Error(`HTTP ${responseCode}`);
   }
 }
 
@@ -365,7 +447,7 @@ function handleCodeRetention(body, image, code, index, docId, method) {
       caption.setItalic(true);
       caption.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
       const preview = code.length > 200 ? code.substring(0, 200) + '...' : code;
-      caption.appendText('📊 Source: ' + preview.replace(/\n/g, ' '));
+      caption.appendText('Source: ' + preview.replace(/\n/g, ' '));
       caption.setSpacingBefore(4);
       caption.setSpacingAfter(12);
       break;
@@ -380,78 +462,22 @@ function handleCodeRetention(body, image, code, index, docId, method) {
   }
 }
 
-function fetchMermaidChart(code, apiKey, theme) {
-  const url = 'https://api.mermaidchart.com/diagrams';
-  const response = UrlFetchApp.fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    payload: JSON.stringify({
-      code: code,
-      theme: theme,
-      format: 'png'
-    }),
-    muteHttpExceptions: true
-  });
-  
-  if (response.getResponseCode() === 200) {
-    return response.getBlob();
-  }
-  throw new Error('MermaidChart API: ' + response.getContentText());
-}
-
-function fetchKrokiDiagram(code, diagramType, theme) {
-  const encoded = Utilities.base64Encode(code, Utilities.Charset.UTF_8);
-  const url = `https://kroki.io/${diagramType}/png/${encoded}`;
-  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  
-  if (response.getResponseCode() === 200) {
-    return response.getBlob();
-  }
-  throw new Error('Kroki.io service error');
-}
-
-function fetchCustomDiagram(code, apiUrl, theme) {
-  const response = UrlFetchApp.fetch(apiUrl, {
-    method: 'POST',
-    payload: {
-      code: code,
-      theme: theme
-    },
-    muteHttpExceptions: true
-  });
-  
-  if (response.getResponseCode() === 200) {
-    return response.getBlob();
-  }
-  throw new Error('Custom API error');
-}
-
 function addCommentToImage(docId, image, code) {
   try {
-    const commentText = `🧜‍♀️ Mermaid Source Code:\n\n${code}\n\n---\nYou can copy this code to edit the diagram.`;
-    
     if (typeof Drive !== 'undefined' && Drive.Comments) {
       const resource = {
-        content: commentText,
-        context: {
-          type: 'text',
-          value: 'Mermaid Diagram'
-        }
+        content: `Mermaid Source:\n\n${code}`,
+        context: { type: 'text', value: 'Mermaid Diagram' }
       };
       Drive.Comments.insert(resource, docId);
     } else {
       image.setAltDescription(code);
     }
   } catch (e) {
-    console.error('Comment addition failed:', e);
     image.setAltDescription(code);
   }
 }
 
-// FIXED: Removed invalid BorderStyle references
 function insertHeading(body, text, level, index) {
   const para = body.insertParagraph(index, text);
   const style = DocumentApp.ParagraphHeading['HEADING' + level];
@@ -492,9 +518,7 @@ function insertCodeBlock(body, code, lang, index) {
 }
 
 function insertTable(body, lines, alignments, index) {
-  // Parse cells preserving content with formatting markers
   const cells = lines.map(line => {
-    // Remove leading/trailing pipes, keep internal content intact
     const cleaned = line.replace(/^\s*\|/, '').replace(/\|\s*$/, '');
     return cleaned.split('|').map(cell => cell.trim());
   });
@@ -505,18 +529,15 @@ function insertTable(body, lines, alignments, index) {
   table.setBorderWidth(1);
   table.setBorderColor('#d0d7de');
   
-  // Style header row
   const headerRow = table.getRow(0);
   for (let i = 0; i < headerRow.getNumCells(); i++) {
     const cell = headerRow.getCell(i);
     cell.setBackgroundColor('#f6f8fa');
-    
-    // Process inline formatting in header cells
     const para = cell.getChild(0).asParagraph();
-    const cellText = cell.getText();  // Get current text
-    para.clear();  // Clear to re-format
-    formatInlineText(para, cellText);  // Re-insert with formatting
-    para.setBold(true);  // Headers are bold
+    const cellText = cell.getText();
+    para.clear();
+    formatInlineText(para, cellText);
+    para.setBold(true);
     para.setFontSize(11);
     
     if (alignments[i] === 'center') {
@@ -526,7 +547,6 @@ function insertTable(body, lines, alignments, index) {
     }
   }
   
-  // Style body cells with inline formatting
   for (let r = 1; r < table.getNumRows(); r++) {
     for (let c = 0; c < table.getRow(r).getNumCells(); c++) {
       const cell = table.getRow(r).getCell(c);
@@ -536,7 +556,7 @@ function insertTable(body, lines, alignments, index) {
       const para = cell.getChild(0).asParagraph();
       const cellText = cell.getText();
       para.clear();
-      formatInlineText(para, cellText);  // Process bold/code/etc in cells
+      formatInlineText(para, cellText);
       
       if (alignments[c] === 'center') {
         para.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
@@ -550,7 +570,7 @@ function insertTable(body, lines, alignments, index) {
 }
 
 function parseAlignments(line) {
-  const cells = line.split('|').filter(c => c.trim() !== '');
+  const cells = line.split('|').filter(c => c.trim() !== '' && c.trim().match(/^[\s:\-]+$/));
   return cells.map(cell => {
     cell = cell.trim();
     if (cell.startsWith(':') && cell.endsWith(':')) return 'center';
@@ -560,38 +580,27 @@ function parseAlignments(line) {
 }
 
 function insertBlockquote(body, text, index) {
-  // Insert paragraph with text first
   const para = body.insertParagraph(index, '');
-  
-  // Process inline formatting (bold, italic, links, code)
   formatInlineText(para, text);
-  
-  // Apply blockquote styling to the entire paragraph
   para.setIndentStart(36);
   para.setIndentFirstLine(36);
-  para.setItalic(true);  // Base italic for blockquote
+  para.setItalic(true);
   para.setForegroundColor('#57606a');
   para.setSpacingBefore(6);
   para.setSpacingAfter(6);
-  
   return index + 1;
 }
 
-// FIXED: Removed invalid Table border methods, using simple paragraph with dashes instead
 function insertHorizontalRule(body, index) {
   const para = body.insertParagraph(index, '');
   para.setSpacingBefore(12);
   para.setSpacingAfter(12);
-  
-  // Use em-dashes as a visual horizontal rule
-  const text = para.appendText('────────────────────────────────────────');
+  const text = para.appendText('----------------------------------------');
   text.setForegroundColor('#d0d7de');
   text.setFontSize(11);
-  
   return index + 1;
 }
 
-// FIXED: Removed invalid setIndentEnd method from ListItem
 function insertNestedList(body, items, isOrdered, index) {
   items.forEach((item, i) => {
     const listItem = body.insertListItem(index + i, item.text);
@@ -599,7 +608,6 @@ function insertNestedList(body, items, isOrdered, index) {
     
     if (item.level > 0) {
       listItem.setIndentStart(36 * item.level);
-      // Removed: listItem.setIndentEnd(36 * item.level); // This method doesn't exist
     }
     
     formatInlineText(listItem, item.text);
